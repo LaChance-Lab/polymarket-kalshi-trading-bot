@@ -1,142 +1,101 @@
-## Polymarket Bitcoin 5-Minute Bot
+# PolyMarket & Kalshi Trading Bot
 
-Automated TS/Node bot that trades Polymarket’s BTC 5‑minute “Up or Down” markets via the official CLOB API.
+Automated trading bots for prediction markets — **PolyMarket** (TypeScript) and **Kalshi** (Rust/TypeScript). Built for reliability, clear configuration, and production-style usage.
 
-It:
-- Connects with your Polymarket wallet (EOA + Gnosis Safe proxy)
-- Finds currently active BTC 5‑minute markets
-- Places a single **both‑sided BUY** (Up & Down) per market when price conditions are met
-- Tracks fills and places a corresponding **SELL** once per filled side
+---
 
-### 1. Prerequisites
+## Overview
 
-- **Node.js** 18+
-- **npm** (or `pnpm`/`yarn`, but examples use npm)
-- A Polymarket account funded with **USDC on Polygon** and already enabled for trading
+This repository provides **systematic trading automation** for two major prediction-market platforms:
 
-### 2. Install dependencies
+| Platform    | Stack        | Description |
+| ----------- | ------------ | ----------- |
+| **PolyMarket** | TypeScript/Node | Automated bot for Polymarket’s CLOB API: discovers active BTC 5‑minute “Up or Down” markets, places both-sided BUY orders when price conditions are met, tracks fills, and places corresponding SELLs with configurable delays and exit logic. |
+| **Kalshi**     | Rust / TypeScript | Trading automation for Kalshi markets (structure may vary by subdirectory). |
 
-From the project root:
+All bots are designed to be **config-driven**, **auditable** (logging, clear state), and **safe** (order size limits, fill tracking, no double-sell).
 
-```bash
-cd arcane-build/polymarket-bot
-npm install
+---
+
+## Repository structure
+
+```
+.
+├── polymarket/
+│   └── ts-version/          # Polymarket bot (TypeScript)
+│       ├── src/
+│       │   ├── index.ts     # Entry point
+│       │   ├── bot.ts       # Core trading logic
+│       │   └── types.ts     # Shared types
+│       ├── config/          # Configuration loader
+│       ├── env.template     # Environment template
+│       ├── package.json
+│       └── README.md        # Full setup & usage for Polymarket
+├── LICENSE                  # MIT
+└── README.md                # This file
 ```
 
-### 3. Configure environment
+---
 
-Create a `.env` file (or copy from the template):
+## Quick start (PolyMarket bot)
 
-```bash
-cp env.template .env
-```
+1. **Prerequisites:** Node.js 18+, npm (or pnpm/yarn). A Polymarket account with USDC on Polygon and trading enabled.
 
-Then edit `.env`:
+2. **Install and configure:**
+   ```bash
+   cd polymarket/ts-version
+   npm install
+   cp env.template .env
+   # Edit .env: PRIVATE_KEY, FUNDER_ADDRESS (Safe proxy), trading params
+   ```
 
-```env
-PRIVATE_KEY=0x...         # EOA private key that controls your Polymarket account
-CLOB_HOST=https://clob.polymarket.com
-CHAIN_ID=137               # Polygon
-GAMMA_HOST=https://gamma-api.polymarket.com
+3. **Run:**
+   ```bash
+   npm run dev
+   ```
 
-# Trading parameters
-TARGET_PRICE=0.45          # BUY limit price
-SELL_PRICE=0.55            # SELL limit price after fill
-ORDER_AMOUNT_USD=2.25      # USD per side (see note below)
-CHECK_INTERVAL=10000       # ms between loops
-SELL_DELAY_MS=10000        # ms to wait after a fill before placing SELL (settlement delay)
-# MIN_SECONDS_TO_ENTER=20   # default 20s = enter/sell even 20s before close; set e.g. 240 for 4 min buffer
-# EXIT_BEFORE_CLOSE_SECONDS=20  # when ≤ this many seconds left, cancel SELL and place aggressive exit (don't hold into resolution)
-# AGGRESSIVE_EXIT_PRICE=0.4     # price for that emergency exit SELL (default 0.40)
+See **[polymarket/ts-version/README.md](polymarket/ts-version/README.md)** for full documentation: environment variables, Gnosis Safe setup, order sizing, sell delay, troubleshooting, and references to the Polymarket CLOB API.
 
-# TRADING_MODE=continuous       # loop forever (default); TRADING_MODE=once = trade only one market duration, then exit
-# LOG_FILE=logs/trading.log     # optional: append all trading activity to this file
+---
 
-# (Optional but strongly recommended for signatureType=2)
-# Gnosis Safe proxy deployed by Polymarket for this wallet (funder/maker address)
-FUNDER_ADDRESS=0xYourSafeProxyAddress
-```
+## Features (PolyMarket bot)
 
-#### About `PRIVATE_KEY` and `FUNDER_ADDRESS`
+- **Wallet support:** EOA + optional Gnosis Safe proxy (`FUNDER_ADDRESS`) for full CLOB compatibility (e.g. `signatureType = 2`).
+- **Market discovery:** Finds active BTC 5‑minute markets via Gamma API; enters each market at most once per run.
+- **Both-sided entry:** Places BUY orders on both Up and Down at configurable limit prices when conditions are met.
+- **Fill tracking:** Tracks BUY order IDs and sizes; places exactly one SELL per filled side after a configurable delay (`SELL_DELAY_MS`) to allow outcome-token settlement.
+- **Configurable exits:** Optional aggressive exit (cancel resting SELL, place marketable SELL) when close to resolution; configurable via `EXIT_BEFORE_CLOSE_SECONDS` and `AGGRESSIVE_EXIT_PRICE`.
+- **Modes:** `TRADING_MODE=continuous` (default) or `once` (single market duration then exit).
 
-- `PRIVATE_KEY` should be the **EOA** you use with Polymarket (e.g. MetaMask).  
-- Polymarket often deploys a **Gnosis Safe proxy** for your account; that Safe holds your CLOB trading balance.
-- For full compatibility with the CLOB client (`signatureType = 2` / Safe mode), set:
-  - `FUNDER_ADDRESS` = your Safe proxy address
+---
 
-If you don’t know your Safe address, you can look it up using Gnosis Safe’s transaction service for Polygon, or via Polymarket tooling. The bot will fall back to using the EOA itself if `FUNDER_ADDRESS` is not set, but Safe mode is recommended.
+## Configuration
 
-#### About `ORDER_AMOUNT_USD` and minimum size
+Configuration is via **environment variables**. Copy `env.template` to `.env` in the relevant bot directory and set:
 
-For BTC 5‑minute markets the CLOB currently enforces a **minimum of 5 shares per order**.
+- **Credentials:** `PRIVATE_KEY`, (optional) `FUNDER_ADDRESS`, and for Polymarket CLOB optionally `POLY_API_KEY`, `POLY_SECRET`, `POLY_PASSPHRASE`.
+- **Endpoints:** `CLOB_HOST`, `GAMMA_HOST`, `CHAIN_ID` (e.g. 137 for Polygon).
+- **Trading:** `TARGET_PRICE_UP`, `SELL_PRICE_UP`, `TARGET_PRICE_DOWN`, `SELL_PRICE_DOWN` (or legacy `TARGET_PRICE`/`SELL_PRICE`), `ORDER_AMOUNT_TOKEN`, `CHECK_INTERVAL`, `SELL_DELAY_MS`, `MIN_SECONDS_BEFORE_EXPIRY`, `EXIT_BEFORE_CLOSE_SECONDS`, `AGGRESSIVE_EXIT_PRICE`, `TRADING_MODE`.
 
-Given `TARGET_PRICE`, you should set:
+See each bot’s README and `env.template` for the full list and defaults.
 
-\[ ORDER\_AMOUNT\_USD \ge 5 \times TARGET\_PRICE \]
+---
 
-Example:
+## Disclaimer
 
-- `TARGET_PRICE = 0.45`
-- `ORDER_AMOUNT_USD >= 5 * 0.45 = 2.25`
+This software is for **educational and research purposes**. Prediction markets and automated trading involve financial risk. Use at your own risk; the authors are not responsible for any losses. Always comply with the terms of service of PolyMarket, Kalshi, and any connected services. Test with small sizes and on testnets or paper trading where available.
 
-If `ORDER_AMOUNT_USD` is too small for 5 shares, the bot will log a warning and **skip entering that market** instead of overspending.
+---
 
-### 4. Run the bot
+## License
 
-Development / watch mode (same as start, but convenient while iterating):
+MIT License. See [LICENSE](LICENSE).
 
-```bash
-npm run dev
-```
+Copyright (c) 2025 LaChance Lab.
 
-The bot will:
+---
 
-1. Load configuration from `.env`
-2. Connect to Polygon RPC (`https://polygon.drpc.org` by default)
-3. Derive or use existing CLOB API credentials
-4. Log your USDC balance/allowance
-5. Repeatedly:
-   - Cancel expired BUY orders
-   - Check for filled BUYs and place corresponding SELLs
-   - Discover active BTC 5‑minute markets and enter **each market at most once**
+## Contact
 
-Stop with `Ctrl+C`:
-
-```bash
-Shutting down bot gracefully...
-```
-
-### 5. Behavior overview
-
-- **One entry per market:** the bot records entered markets in an in‑memory map and will not re‑enter the same BTC 5‑minute market during the process lifetime.
-- **Tracked BUYs:** every successful BUY (Up/Down) is tracked by `orderID`, market, outcome, and size.
-- **Single SELL per fill:** once a BUY is detected as filled, the bot issues **one SELL** for exactly that size and removes it from its tracking map so it won’t sell twice.
-
-### 6. Building & type‑checking
-
-Optional, if you want compiled JS or to run TS checks explicitly:
-
-```bash
-# Type-check only
-npm run typecheck
-
-# Build to dist/
-npm run build
-```
-
-### 7. Troubleshooting
-
-**"not enough balance / allowance" when placing SELL**
-
-After a BUY fills, the CLOB needs a short time to credit the **outcome tokens** to your maker (Safe). If the bot places a SELL too soon, the exchange may reject it with "not enough balance/allowance" because it still sees zero outcome-token balance.
-
-- The bot now **waits `SELL_DELAY_MS`** (default **10000** ms) after detecting a fill before placing the SELL, and adds a 4s gap between processing multiple fills in the same cycle. Increase `SELL_DELAY_MS` (e.g. `SELL_DELAY_MS=5000`) if you still see the error.
-- If the first SELL attempt fails with that message, the bot **keeps the order in tracking** and will **retry** on the next loop instead of dropping it.
-
-### 8. Useful references
-
-- Polymarket CLOB docs (orders, auth, and clients):  
-  `https://docs.polymarket.com/developers/CLOB/`
-- Official TypeScript CLOB client:  
-  `https://github.com/Polymarket/clob-client`
-
+- **Telegram:** [https://t.me/lachancelab](https://t.me/lachancelab)
+- **Support:** For questions, integration support, or custom automation, reach out via the link above.
